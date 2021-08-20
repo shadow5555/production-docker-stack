@@ -1,0 +1,281 @@
+services:
+  bookstack:
+    image: linuxserver/bookstack
+    container_name: bookstack
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - DB_HOST=bookstackdb
+      - DB_USER=$BSUSER
+      - DB_PASS=$BSPSW
+      - DB_DATABASE=$BSDB
+      - APP_URL=$BSBASEURL
+      - APP_THEME=custom
+      - APP_DEFAULT_DARK_MODE=true
+      #- APP_DEBUG=true
+      #- WKHTMLTOPDF=/usr/bin/wkhtmltopdf
+    volumes:
+      - $DOCKER_PATH/bookstack:/config
+    ports:
+      - 6875:80
+    depends_on:
+      - bookstackdb
+    labels: 
+      autoheal: 'true'
+    healthcheck:
+      test: curl -fSs 127.0.0.1:80/status || exit 1
+      start_period: 60s
+      interval: 5s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+ 
+  bookstackdb:
+   image: linuxserver/mariadb
+   container_name: bookstackdb
+   environment:
+     - PUID=$PUID
+     - PGID=$PGID
+     - TZ=$TZ
+     - MYSQL_ROOT_PASSWORD=$BSROOTPSW
+     - MYSQL_DATABASE=$BSDB
+     - MYSQL_USER=$BSUSER
+     - MYSQL_PASSWORD=$BSPSW
+   volumes:
+     - $DOCKER_PATH/bookstackdb:/config
+   labels: 
+     autoheal: 'true'
+   healthcheck:
+     test: ["CMD", "mysqladmin", "ping", "--silent"]
+   restart: unless-stopped
+ 
+   # autoheal - restarts unhealthy containers
+  autoheal: 
+    container_name: autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+      - TZ=$TZ
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock'
+    image: willfarrell/autoheal
+ 
+  # Portainer - docker manager
+  portainer:
+    image: portainer/portainer-ce
+    container_name: portainer
+    restart: always
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - 9000:9000
+      - 8000:8000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - $DOCKER_PATH/portainer:/data
+    environment:
+      - TZ=$TZ
+ 
+  # Watchtower - updates containers with latest images
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock 
+    environment:
+      TZ: $TZ
+      WATCHTOWER_REMOVE_VOLUMES: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_POLL_INTERVAL: $WT_INTERVAL
+      WATCHTOWER_TIMEOUT: 15
+      WATCHTOWER_NOTIFICATIONS_LEVEL: info
+      WATCHTOWER_NOTIFICATIONS: shoutrrr
+      # Using Pushbullet, telegram and pushover as examples, but just pick one
+      # WATCHTOWER_NOTIFICATION_URL: "pushover://shoutrrr:$PUSHOVER_APP_API__SECRET@$PUSHOVER_USER_API__SECRET/?devices=$PUSHOVER_DEVICE telegram://$TELEGRAM_BOT_TOKEN__SECRET@telegram?channels=$TELEGRAM_CHAT_ID__SECRET pushbullet://$PUSHBULLET_API__SECRET"
+    restart: always
+ 
+  # Exportarr
+  # Open app with http://hostIP:1234?token=xyzzy
+  exportarr:
+    container_name: exportarr
+    image: petersem/exportarr
+    environment:
+      TOKEN: "xyzzy"
+      RADARR_URL: radaripaddress"
+      RADARR_TOKEN: $RADARR_API_KEY
+    ports:
+      - 1234:3000
+    labels: 
+      autoheal: 'true'
+  
+  # Papermerge
+  papermerge:
+    image: ghcr.io/linuxserver/papermerge
+    container_name: papermerge
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      # - REDIS_URL= #optional
+    volumes:
+      - $DOCKER_PATH/papermerge/config:/config
+      - $DOCKER_PATH/papermerge/data:/data
+    ports:
+      - 8010:8010
+    restart: unless-stopped
+ 
+  hastebin:
+    container_name: hastebin
+    image: rlister/hastebin
+    environment:
+      STORAGE_TYPE: redis
+      STORAGE_HOST: hastebinredis
+    ports:
+      - "7777:7777"
+    depends_on:
+      - hastebinredis
+    labels: 
+      autoheal: 'true'
+ 
+  hastebinredis:
+    container_name: hastebinredis
+    image: redis
+    volumes:
+      - $DOCKER_PATH/hastebinredis:/data
+    entrypoint: redis-server --appendonly yes
+    labels: 
+      autoheal: 'true'
+ 
+  netdata:
+    container_name: netdata
+    image: netdata/netdata
+    hostname: example.com # set to fqdn of host
+    environment:
+      - PGID=$NDROOTID
+      - TZ=$TZ
+      - DOCKER_USR=root
+    ports:
+      - 19999:19999
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+
+  speedtest:
+    container_name: speedtest
+    image: e7db/speedtest
+    ports:
+      - 777:80
+    volumes:
+      - $DOCKER_PATH/speedtest:/app/results
+    restart: unless-stopped
+    labels: 
+      autoheal: 'true'
+ 
+  mealie:
+    container_name: mealie
+    image: hkotel/mealie
+    restart: unless-stopped
+    ports:
+      - 9925:80
+    environment:
+      TZ: $TZ
+    volumes:
+      - $DOCKER_PATH/mealie/data/:/app/data
+    labels: 
+      autoheal: 'true'
+ 
+  # calibre - ebook reader
+  calibre:
+    image: linuxserver/calibre
+    container_name: calibre
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - KEEP_APP_RUNNING=1
+      - TZ=$TZ
+    volumes:
+      - $DOCKER_PATH/calibre:/config
+      #- /mnt/ebooks:/books:rw
+    ports:
+      - 7080:8080
+      - 7081:8081
+    labels: 
+      autoheal: 'true'
+ 
+  calibre-web:
+    image: linuxserver/calibre-web
+    container_name: calibre-web
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - DOCKER_MODS=linuxserver/calibre-web:calibre
+    volumes:
+      - $DOCKER_PATH/calibre-web:/config
+      #- /mnt/ebooks:/books:rw
+    ports:
+      - 8083:8083
+    labels: 
+      autoheal: 'true'
+    healthcheck:
+      test: curl -fSs http://127.0.0.1:8083 || exit 1
+      start_period: 500s
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    depends_on: 
+      - calibre
+    restart: unless-stopped
+ 
+  piwigo:
+    image: ghcr.io/linuxserver/piwigo
+    container_name: piwigo
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=$TZ
+    volumes:
+      - $DOCKER_PATH/piwigo/config:/config
+      - $DOCKER_PATH/piwigo/gallery:/gallery
+    ports:
+      - 8070:80
+    restart: unless-stopped
+ 
+  piwigodb:
+    image: linuxserver/mariadb
+    container_name: piwigodb
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - MYSQL_ROOT_PASSWORD=$PWROOTPSW
+      - MYSQL_DATABASE=$PWDB
+      - MYSQL_USER=$PWUSER
+      - MYSQL_PASSWORD=$PWPSW
+    volumes:
+      - $DOCKER_PATH/piwigodb:/config
+    labels: 
+      autoheal: 'true'
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "--silent"]
+    restart: unless-stopped
+
+  languagetool:
+      image: erikvl87/languagetool
+      container_name: languagetool
+      ports:
+          - 8810:8010  # Using default port from the image
+      environment:
+          - langtool_languageModel=/ngrams  # OPTIONAL: Using ngrams data
+          - Java_Xms=512m  # OPTIONAL: Setting a minimal Java heap size of 512 mib
+          - Java_Xmx=1g  # OPTIONAL: Setting a maximum Java heap size of 1 Gib
+      volumes:
+          - $DOCKER_PATH/ngrams/data:/ngrams 
